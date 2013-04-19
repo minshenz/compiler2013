@@ -1,6 +1,6 @@
 package types;
 
-public final class Function extends Type {
+public class Function extends Type {
 	
 	public Type argumentType = null;
 	public Type returnType;

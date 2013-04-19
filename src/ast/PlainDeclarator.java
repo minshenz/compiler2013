@@ -5,7 +5,6 @@ public final class PlainDeclarator extends Declarator {
 	
 	public Symbol symbol;
 	public int number_of_stars;
-	public Position pos = null;
 	
 	public PlainDeclarator(Position p, Symbol s) {
 		pos = p;

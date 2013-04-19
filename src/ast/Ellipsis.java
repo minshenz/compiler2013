@@ -1,9 +1,9 @@
 package ast;
 
-public class Ellipsis extends PlainDeclaration {
+public class Ellipsis extends Parameters {
 	
 	public Ellipsis() {
-		super(null, null, null);
+		super(null, null);
 	}
 
 }

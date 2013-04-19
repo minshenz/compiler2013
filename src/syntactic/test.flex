@@ -12,6 +12,11 @@ import	java.io.*;
 %implements Symbols
 
 %{
+	private void err(String message) {
+		System.out.println("Scanning error in line " + yyline + ", column " + yycolumn + ": " + message);
+		System.exit(1);
+	}
+	
 	private java_cup.runtime.Symbol tok(int kind) {
 		return new java_cup.runtime.Symbol(kind, yyline, yycolumn);
 	}

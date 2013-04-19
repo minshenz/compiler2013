@@ -32,9 +32,11 @@ public final class Env {
 	private void initVEnv() {
 		vEnv = new Table();
 		vEnv.put(symbol("NULL"), new VarEntry(new Pointer(Type.VOID)));
-		vEnv.put(symbol("malloc"), new StdFunEntry(new Function(Type.INT, new Pointer(Type.VOID))));
+		vEnv.put(symbol("malloc"), new StdFunEntry(new Function(Type.INT, new Function(null, new Pointer(Type.VOID)))));
 		vEnv.put(symbol("getchar"), new StdFunEntry(new Function(Type.INT)));
-		vEnv.put(symbol("putchar"), new StdFunEntry(new Function(Type.INT, Type.INT)));
+		vEnv.put(symbol("putchar"), new StdFunEntry(new Function(Type.INT, new Function(null, Type.INT))));
+		vEnv.put(symbol("printf"), new StdFunEntry(new Function(new Pointer(Type.CHAR), new Ellipsis(Type.VOID))));
+		vEnv.put(symbol("scanf"), new StdFunEntry(new Function(new Pointer(Type.CHAR), new Ellipsis(Type.INT))));
 	}
 	
 	public void beginScope() {

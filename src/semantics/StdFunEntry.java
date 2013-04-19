@@ -1,7 +1,7 @@
 package semantics;
 import types.Function;
 
-public class StdFunEntry extends VarEntry {
+public class StdFunEntry extends FunEntry {
 	
 	public StdFunEntry(Function t) {
 		super(t);

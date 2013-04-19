@@ -1,6 +1,7 @@
 package semantics;
 import types.*;
 import ast.*;
+import ast.Ellipsis;
 import ast.Number;
 import util.*;
 import util.Error;
@@ -84,7 +85,7 @@ public class Semantic {
 		case DEFINED:
 			tmp = (Type) env.tEnv.get(((TypedefTypeSpecifier) ty).typedefname);
 			if (tmp == null) {
-				fatalError(ty.pos, "Undefined type name");
+				fatalError(ty.pos, "Undefined type name " + ((TypedefTypeSpecifier) ty).typedefname.toString());
 			}
 			break;
 		}
@@ -97,6 +98,7 @@ public class Semantic {
 	
 	private Type checkBrackets(Type t, DeclaratorWithBrackets d) {
 		ConstantExpressionPackage clist = d.constantexpressionpackage;
+		java.util.Stack<Integer> capStack = new java.util.Stack<Integer>();
 		while(clist != null) {
 			checkExpr(clist.head.op);
 			if (!clist.head.isConstant()) {
@@ -107,19 +109,22 @@ public class Semantic {
 				error(clist.head.pos, "Array capacity must be positive");
 				return null;
 			}
-			t = new Array(t, clist.head.op.value);
+			capStack.push(clist.head.op.value);
 			clist = clist.tail;
 		}
+		while (!capStack.isEmpty()) t = new Array(t, capStack.pop());
 		return t;
 	}
 	
 	private Type checkParameters(Type rettype, DeclaratorWithParameters d) {
 		Parameters paralist = d.parameters;
-		rettype = new Function(null, rettype);
-		if (paralist.head != null && paralist.head instanceof Ellipsis) {
-			/* to be accomplished */
-		}
+		Type type = new Function(null, rettype);
+		java.util.Stack<Type> paraStack = new java.util.Stack<Type>();
 		while (paralist != null) {
+			if (paralist instanceof Ellipsis) {
+				type = new types.Ellipsis(rettype);
+				break;
+			}
 			TypeSpecifier ts = paralist.head.typespecifier;
 			Declarator dec = paralist.head.dec;
 			Type paratype = null;
@@ -132,10 +137,11 @@ public class Semantic {
 				paratype = toType(ts, dec.plaindeclarator.stars());
 				paratype = checkParameters(paratype, (DeclaratorWithParameters) dec);
 			}
-			rettype = new Function(paratype, rettype);
+			paraStack.push(paratype);
 			paralist = paralist.tail;
 		}
-		return rettype;
+		while (!paraStack.isEmpty()) type = new Function(paraStack.pop(), type);
+		return type;
 	}
 	
 	private Record checkStruct(StructTypeSpecifier s) {
@@ -218,13 +224,18 @@ public class Semantic {
 	}
 	
 	private void checkFunctionDef(FunctionDefinition funcdef) {
-		Type type = new Function(null, toType(funcdef.typespecifier, funcdef.plaindeclarator.stars()));
+		Type type = toType(funcdef.typespecifier, funcdef.plaindeclarator.stars());
 		thisfunction = type;
+		type = new Function(null, type);
 		Parameters paralist = funcdef.parameters;
 		java.util.Dictionary<Symbol, Type> paraTable = new java.util.Hashtable<Symbol, Type>();
 		java.util.Stack<Symbol> paraStack = new java.util.Stack<Symbol>();
 		env.rEnv.beginScope();
 		while (paralist != null) {
+			if (paralist instanceof Ellipsis) {
+				type = new types.Ellipsis(thisfunction);
+				break;
+			}
 			TypeSpecifier ts = paralist.head.typespecifier;
 			Declarator dec = paralist.head.dec;
 			Type paratype = null;
@@ -245,12 +256,25 @@ public class Semantic {
 			paralist = paralist.tail;
 		}
 		while (!paraStack.isEmpty()) type = new Function(paraTable.get(paraStack.pop()), type);
-		env.vEnv.put(funcdef.plaindeclarator.getSymbol(), new VarEntry(type));
+		if (!env.vEnv.checkNameUniquity(funcdef.plaindeclarator.getSymbol())) {
+			VarEntry varinfo = (VarEntry) env.vEnv.get(funcdef.plaindeclarator.getSymbol());
+			if (!(varinfo instanceof FunEntry) || (varinfo instanceof FunEntry && ((FunEntry) varinfo).implemented)) {
+				error(funcdef.plaindeclarator.pos, "Redefinition of " + funcdef.plaindeclarator.getSymbol().toString());
+				return;
+			}
+			if (!type.equalTo(((FunEntry) varinfo).type)) {
+				error(funcdef.pos, "Function " + funcdef.plaindeclarator.getSymbol().toString() + " has conflicts with previous declaration");
+				return;
+			}
+		}
+		env.vEnv.put(funcdef.plaindeclarator.getSymbol(), new FunEntry((Function) type));
+		((FunEntry) env.vEnv.get(funcdef.plaindeclarator.getSymbol())).Implement();
 		
 		paralist = funcdef.parameters;
 		env.vEnv.beginScope();
 		env.tEnv.beginScope();
 		while (paralist != null) {
+			if (paralist instanceof Ellipsis) break;
 			Declarator dec = paralist.head.dec;
 			env.vEnv.put(dec.getSymbol(), new VarEntry(paraTable.get(dec.getSymbol())));
 			paralist = paralist.tail;
@@ -326,12 +350,20 @@ public class Semantic {
 	private void checkStmt(ForStatement stmt) {
 		checkExpr(stmt.expr1);
 		checkExpr(stmt.expr2);
+		if (!stmt.expr2.type.equalTo(Type.INT)) {
+			error(stmt.expr2.pos, "Invalid condition");
+			return;
+		}
 		checkExpr(stmt.expr3);
 		checkStmt(stmt.body);
 	}
 	
 	private void checkStmt(WhileStatement stmt) {
 		checkExpr(stmt.cond);
+		if (!stmt.cond.type.equalTo(Type.INT)) {
+			error(stmt.cond.pos, "Invalid condition");
+			return;
+		}
 		checkStmt(stmt.body);
 	}
 	
@@ -409,6 +441,8 @@ public class Semantic {
 			}
 			for (int i = 0; i < d.plaindeclarator.stars(); ++i) ltype = new Pointer(ltype);
 			ltype = checkParameters(ltype, (DeclaratorWithParameters) d);
+			env.vEnv.put(d.getSymbol(), new FunEntry((Function) ltype));
+			return;
 		}
 		if ((rtype != null) && !ltype.equalTo(rtype)) {
 			error(pos, "Initializing with wrong type");
@@ -457,11 +491,13 @@ public class Semantic {
 		} else {
 			checkExpr(op.left);
 			checkExpr(op.right);
-			if (op.left.type instanceof Record || op.right.type instanceof Record)
-				fatalError(op.pos, "Record type operands");
-			if (!op.left.type.equalTo(op.right.type)) 
-				fatalError(op.pos, "Assign or operate with incompatible types");
 			switch (op.Optype) {
+			case COMMA:
+				op.type = op.right.type;
+				op.isLvalue = op.right.isLvalue;
+				op.isConstant = op.right.isConstant;
+				if (op.isConstant) op.value = op.right.value;
+				break;
 			case ASSIGN:
 			case MUL_ASSIGN:
 			case DIV_ASSIGN:
@@ -474,12 +510,21 @@ public class Semantic {
 			case XOR_ASSIGN: 
 			case OR_ASSIGN:
 				if (!op.left.isLvalue) fatalError(op.pos, "Invalid Lvalue");
+				if (op.left.type instanceof Record || op.right.type instanceof Record)
+					fatalError(op.pos, "Record type operands");
+				if (!op.left.type.equalTo(op.right.type)) 
+					if (!(op.left.type instanceof Pointer && op.right.isConstant && op.right.value == 0))
+							fatalError(op.pos, "Assign or operate with incompatible types");
 				op.type = op.left.type;
 				op.isLvalue = false;
 				op.isConstant = false;
 				if (op.isConstant) op.value = calcConst(op.Optype, op.left.value, op.right.value);
 				break;
 			default:
+				if (op.left.type instanceof Record || op.right.type instanceof Record)
+					fatalError(op.pos, "Record type operands");
+				if (!op.left.type.equalTo(op.right.type)) 
+					fatalError(op.pos, "Assign or operate with incompatible types");
 				if (!(op.left.type.equalTo(Type.INT) && op.right.type.equalTo(Type.INT))) fatalError(op.pos, "Operands must be INT or CHAR");
 				op.isLvalue = false;
 				op.type = op.left.type;
@@ -565,7 +610,7 @@ public class Semantic {
 			if (casttype.equalTo(Type.INT)) expr.isConstant = expr.expr.isConstant;
 			else expr.isConstant = false;
 			if (expr.isConstant) expr.value = expr.expr.value;
-			expr.isLvalue = expr.expr.isLvalue;
+			expr.isLvalue = false;
 		}
 	}
 	
@@ -596,7 +641,7 @@ public class Semantic {
 				if (!(expr.pexpr.type instanceof Pointer)) {
 					fatalError(expr.pos, "Array type required");
 				}
-				expr.type = ((Pointer) expr.pexpr.type).elementType;
+				expr.type = ((Pointer) expr.pexpr.type).elementType();
 				expr.isLvalue = true;
 				expr.isConstant = false;
 			} else if (expr.postfix instanceof PostfixWithParens) {
@@ -619,10 +664,10 @@ public class Semantic {
 					args = args.tail;
 					rettype = (Function) rettype.returnType;
 				}
-				if (rettype.argumentType != null) {
+				if (rettype.argumentType != null && !(rettype.argumentType instanceof types.Ellipsis)) {
 					fatalError(expr.pexpr.pos, "Too few arguments");
 				}
-				expr.type = rettype.returnType;
+				expr.type = rettype.returnType.actual();
 				expr.isConstant = false;
 				expr.isLvalue = false;
 			} else if (expr.postfix instanceof PostfixWithPointer) {
@@ -635,7 +680,7 @@ public class Semantic {
 					}
 					Type t = ((Record) type).getField(pp.symbol);
 					if (t == null) {
-						fatalError(expr.pos, "Unknown field name" + pp.symbol.toString());
+						fatalError(expr.pos, "Unknown field name \"" + pp.symbol.toString() + "\"");
 					}
 					expr.type = t;
 					expr.isConstant = false;
@@ -644,10 +689,10 @@ public class Semantic {
 				case PTR:
 					if (!(type instanceof Pointer)) {
 						fatalError(expr.pexpr.pos, "Pointer type required");	
-					} else if (!((((Pointer) type).elementType.actual()) instanceof Record)) {
+					} else if (!((((Pointer) type).elementType()) instanceof Record)) {
 						fatalError(expr.pexpr.pos, "Record Pointer required");
 					}
-					Type pt = ((Record) ((Pointer) type).elementType).getField(pp.symbol);
+					Type pt = ((Record) ((Pointer) type).elementType()).getField(pp.symbol);
 					if (pt == null) {
 						fatalError(expr.pexpr.pos, "Unknown field name" + pp.symbol.toString());
 					}
@@ -765,7 +810,7 @@ public class Semantic {
 				error(expr.pos, "Pointer required");
 				return;
 			}
-			expr.type = ((Pointer) cexpr.type).elementType;
+			expr.type = ((Pointer) cexpr.type).elementType();
 			expr.isConstant = false;
 			expr.isLvalue = true;
 			break;

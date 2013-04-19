@@ -11,7 +11,7 @@ public final class CharConstant extends Constant {
 	}
 	
 	public int toInteger() {
-		return 0;
+		return (int) val.charAt(0);
 	}
 
 }

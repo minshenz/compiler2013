@@ -15,6 +15,23 @@ action code {:
 :}
 
 parser code {:
+	public void report_error(String message, Object info) {
+		StringBuffer m = new StringBuffer("\tParsing error");
+		if (info instanceof java_cup.runtime.Symbol) {
+			java_cup.runtime.Symbol s = (java_cup.runtime.Symbol) info;
+
+			if (s.left >= 0) {
+				m.append(" in line " + (s.left +1 ));
+				if (s.right >= 0) {
+					m.append(", column " + (s.right + 1));
+				}
+			}
+		}
+		m.append(" : " + message);
+		System.err.println(m);
+		System.exit(1);
+	}
+	
 	public Parser(InputStream in) {
 		this(new Lexer(in));
 	}
@@ -35,7 +52,7 @@ non terminal Program					program;
 non terminal FunctionDefinition			functiondefinition;
 non terminal DeclarationList			declarations;
 non terminal Declaration				declaration;
-non terminal Parameters					parameters, basicparameters;
+non terminal Parameters					parameters;
 non terminal DeclaratorList				declarators;
 non terminal Declarator					declarator;
 non terminal PlainDeclarationList		plaindeclarations;
@@ -88,10 +105,9 @@ functiondefinition ::= typespecifier:t plaindeclarator:p LPAREN parameters:q RPA
 							{: RESULT = new FunctionDefinition(pos(tleft, tright), t, p, q, s); :}
 					 | typespecifier:t plaindeclarator:p LPAREN RPAREN compoundstatement:s
 							{: RESULT = new FunctionDefinition(pos(tleft, tright), t, p, null, s); :}								;
-basicparameters ::= plaindeclaration:p							{: RESULT = new Parameters(p); :}
-				  | plaindeclaration:p COMMA basicparameters:q 	{: RESULT = new Parameters(p, q); :}				;
-parameters ::= basicparameters:b								{: RESULT = b; :}
-			 | basicparameters:b ELLIPSIS						{: RESULT = new Parameters(new Ellipsis(), b); :}						;
+parameters ::= plaindeclaration:p								{: RESULT = new Parameters(p); :}
+			 | plaindeclaration:p COMMA parameters:q 			{: RESULT = new Parameters(p, q); :}				
+			 | ELLIPSIS											{: RESULT = new Ellipsis(); :}										;
 declarators ::= declarator:d								{: RESULT = new DeclaratorList(d); :}
 			  | declarator:d COMMA declarators:e			{: RESULT = new DeclaratorList(d, e); :}			;
 initdeclarators ::= initdeclarator:i						{: RESULT = new InitDeclaratorList(i); :}
@@ -102,16 +118,16 @@ initializer ::= assignmentexpression:a						{: RESULT = new BasicInitializer(a.p
 			  | LBRACE:l initializers:i RBRACE				{: RESULT = new BracedInitializer(pos(lleft, lright), i); :}				;
 initializers ::= initializer:i								{: RESULT = new InitializerList(i); :}
 			   | initializer:i COMMA initializers:j			{: RESULT = new InitializerList(i, j); :}				;
-typespecifier ::= VOID:v									{: RESULT = new TypeSpecifier(pos(vleft, vright), TypeSpecifier.TYPE.VOID); :}
-				| CHAR:c									{: RESULT = new TypeSpecifier(pos(cleft, cright), TypeSpecifier.TYPE.CHAR); :}
-				| INT:i										{: RESULT = new TypeSpecifier(pos(ileft, iright), TypeSpecifier.TYPE.INT); :}
-				| TYPEDEFNAME:t								{: RESULT = new TypedefTypeSpecifier(pos(tleft, tright), symbol(t)); :}
+typespecifier ::= VOID:v												{: RESULT = new TypeSpecifier(pos(vleft, vright), TypeSpecifier.TYPE.VOID); :}
+				| CHAR:c												{: RESULT = new TypeSpecifier(pos(cleft, cright), TypeSpecifier.TYPE.CHAR); :}
+				| INT:i													{: RESULT = new TypeSpecifier(pos(ileft, iright), TypeSpecifier.TYPE.INT); :}
+				| TYPEDEFNAME:t											{: RESULT = new TypedefTypeSpecifier(pos(tleft, tright), symbol(t)); :}
 				| STRUCT:s ID:i											{: RESULT = new StructTypeSpecifier(pos(sleft, sright), symbol(i)); :}
 				| STRUCT:s ID:i LBRACE plaindeclarations:p RBRACE		{: RESULT = new StructTypeSpecifier(pos(sleft, sright), symbol(i), p); :}
 				| STRUCT:s LBRACE plaindeclarations:p RBRACE			{: RESULT = new StructTypeSpecifier(pos(sleft, sright), p); :}		
 				| UNION:u ID:i											{: RESULT = new UnionTypeSpecifier(pos(uleft, uright), symbol(i)); :}
 				| UNION:u ID:i LBRACE plaindeclarations:p RBRACE		{: RESULT = new UnionTypeSpecifier(pos(uleft, uright), symbol(i), p); :}
-				| UNION:u LBRACE plaindeclarations:p RBRACE				{: RESULT = new UnionTypeSpecifier(pos(uleft, uright), p); :}								;
+				| UNION:u LBRACE plaindeclarations:p RBRACE				{: RESULT = new UnionTypeSpecifier(pos(uleft, uright), p); :}		;
 plaindeclarations ::= typespecifier:t declarators:d SEMICOLON						{: RESULT = new PlainDeclarationList(t, d); :}
 					| typespecifier:t declarators:d SEMICOLON plaindeclarations:p	{: RESULT = new PlainDeclarationList(t, d, p); :}		;
 plaindeclaration ::= typespecifier:t declarator:d							{: RESULT = new PlainDeclaration(t.pos, t, d); :}						;
@@ -120,7 +136,7 @@ declarator ::= plaindeclarator:p LPAREN parameters:q RPAREN					{: RESULT = new 
 			 | plaindeclarator:p constantexpressionpackage:c				{: RESULT = new DeclaratorWithBrackets(p.pos, p, c); :}				
 			 | plaindeclarator:p											{: RESULT = p; :}												;
 constantexpressionpackage ::= LBRACKET constantexpression:c RBRACKET								{: RESULT = new ConstantExpressionPackage(c, null); :}	
-							| constantexpressionpackage:d LBRACKET constantexpression:c RBRACKET 	{: RESULT = new ConstantExpressionPackage(c, d); :}	;
+							| LBRACKET constantexpression:c RBRACKET constantexpressionpackage:d 	{: RESULT = new ConstantExpressionPackage(c, d); :}	;
 plaindeclarator ::= ID:s						{: RESULT = new PlainDeclarator(pos(sleft, sright), symbol(s)); :}
 				  | TIMES plaindeclarator:p		{: RESULT = new PlainDeclarator(p.pos, 1+p.stars(), p.getSymbol()); :}			;
 
