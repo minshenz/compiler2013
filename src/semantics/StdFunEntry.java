@@ -5,6 +5,7 @@ public class StdFunEntry extends FunEntry {
 	
 	public StdFunEntry(Function t) {
 		super(t);
+		implemented = true;
 	}
 
 }

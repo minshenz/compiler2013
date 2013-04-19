@@ -7,7 +7,5 @@ public abstract class Declarator {
 	public PlainDeclarator plaindeclarator;
 	
 	public abstract Symbol getSymbol();
-	
-	
-	
+
 }

@@ -41,6 +41,6 @@ final class ParserTest {
 	}
 
 	public static void main(String argv[]) throws IOException {
-		parse("D:/compiler/input.txt");
+		parse(argv[0]);
 	}
 }

@@ -36,7 +36,7 @@ final class SemanticTest {
 	}
 	
 	public static void main(String argv[]) throws Exception {
-		semantic(path + "input.txt");
+		semantic(argv[0]);
 	}
 
 }

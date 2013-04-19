@@ -11,6 +11,7 @@ import java.util.ArrayList;
 public class Semantic {
 
 	private List<Error> errors = new ArrayList<Error>();
+	private java.util.ArrayList<Var> callTable = new java.util.ArrayList<Var>();
 	private Env env = null;
 	private int inIteration = 0;
 	private Type thisfunction = null;
@@ -200,7 +201,7 @@ public class Semantic {
 					for (int i = 0; i < d.plaindeclarator.stars(); ++i) fieldtype = new Pointer(fieldtype);
 					fieldtype = checkBrackets(fieldtype, (DeclaratorWithBrackets) d);
 				} else if (d instanceof DeclaratorWithParameters) {
-					error(d.pos, "Field " + d.plaindeclarator.symbol.toString() + " declared as a function");
+					error(d.pos, "Field \"" + d.plaindeclarator.symbol.toString() + "\" declared as a function");
 					return null;
 				}
 				rec.addField(fieldname, fieldtype);
@@ -220,6 +221,10 @@ public class Semantic {
 				checkFunctionDef((FunctionDefinition) prog.head);
 			}
 			prog = prog.tail;
+		}
+		for (Var v : callTable) {
+			FunEntry funinfo = (FunEntry) env.vEnv.get(v.symbol);
+			if (!funinfo.implemented) error(v.pos, "Undefined reference to \"" + v.symbol.toString() + "\"");
 		}
 	}
 	
@@ -645,15 +650,11 @@ public class Semantic {
 				expr.isLvalue = true;
 				expr.isConstant = false;
 			} else if (expr.postfix instanceof PostfixWithParens) {
-				VarEntry varinfo = (VarEntry) env.vEnv.get(((Var) expr.pexpr).symbol);
-				if (varinfo == null) {
-					fatalError(expr.pexpr.pos, "Undeclared function");
-				}
-				if (!(varinfo.type instanceof Function)) {
+				if (!(expr.pexpr.type instanceof Function)) {
 					fatalError(expr.pexpr.pos, "Function name required");
 				}
 				Arguments args = ((PostfixWithParens) expr.postfix).arguments;
-				Function rettype = (Function) varinfo.type;
+				Function rettype = (Function) expr.pexpr.type;
 				while (args != null) {
 					if (rettype.argumentType == null) {
 						fatalError(args.head.pos, "Too many arguments");
@@ -694,7 +695,7 @@ public class Semantic {
 					}
 					Type pt = ((Record) ((Pointer) type).elementType()).getField(pp.symbol);
 					if (pt == null) {
-						fatalError(expr.pexpr.pos, "Unknown field name" + pp.symbol.toString());
+						fatalError(expr.pexpr.pos, "Unknown field name \"" + pp.symbol.toString() + "\"");
 					}
 					expr.type = pt;
 					expr.isConstant = false;
@@ -731,12 +732,13 @@ public class Semantic {
 	private void checkExpr(Var expr) {
 		VarEntry varinfo = (VarEntry) env.vEnv.get(expr.symbol);
 		if (varinfo == null) {
-			error(expr.pos, "Undefined variable");
+			error(expr.pos, "Undefined variable of function " + expr.symbol.toString());
 			return;
 		}
 		expr.type = varinfo.type.actual();
 		expr.isConstant = false;
 		expr.isLvalue = true;
+		if (varinfo instanceof FunEntry) callTable.add(expr);
 	}
 	
 	private void checkExpr(Constant expr) {
